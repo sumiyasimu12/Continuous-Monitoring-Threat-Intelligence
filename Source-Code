@@ -1,0 +1,92 @@
+import requests
+import time
+import smtplib
+import logging
+import threading
+import json
+from datetime import datetime
+from collections import deque
+
+# Configuration
+THREAT_FEED_URL = "https://example.com/threat-feed"  # Update with the actual threat feed URL
+MONITOR_INTERVAL = 60  # Monitor every 60 seconds
+ALERT_EMAIL = "your_email@example.com"  # Email to send alerts to
+SMTP_SERVER = "smtp.example.com"  # SMTP server
+SMTP_PORT = 587  # SMTP port
+SMTP_USER = "your_email@example.com"  # Your email for SMTP
+SMTP_PASSWORD = "your_password"  # Your email password for SMTP
+ALERT_THRESHOLD = 5  # Threshold for alerting based on threat severity
+HISTORICAL_DATA_LIMIT = 100  # Limit for historical data storage
+
+# Setup logging
+logging.basicConfig(filename='monitoring.log', level=logging.INFO)
+
+# Historical threat data storage
+historical_data = deque(maxlen=HISTORICAL_DATA_LIMIT)
+
+def fetch_threat_feed():
+    """Fetches the threat feed from the specified URL."""
+    try:
+        response = requests.get(THREAT_FEED_URL)
+        if response.status_code == 200:
+            threat_feed = response.json()
+            logging.info(f"Threat feed fetched successfully at {datetime.now()}")
+            historical_data.append(threat_feed)  # Store historical data
+            return threat_feed  # Threat feed JSON data
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching threat feed: {e}")
+    return {}
+
+def detect_anomalies(threat_feed):
+    """Checks for anomalies based on the fetched threat feed."""
+    if threat_feed:
+        high_severity_threats = [
+            threat for threat in threat_feed.get('threats', [])
+            if threat.get('severity', 0) >= ALERT_THRESHOLD
+        ]
+        if high_severity_threats:
+            logging.info(f"Detected {len(high_severity_threats)} high-severity threats.")
+            return True, high_severity_threats
+    return False, []
+
+def send_email_alert(threats):
+    """Sends an alert via email."""
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()  # Upgrade to a secure connection
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            threat_list = "\n".join([f"{threat['name']} (Severity: {threat['severity']})" for threat in threats])
+            message = f"Subject: ALERT: Possible security incidents detected!\n\nDetected high-severity threats:\n{threat_list}"
+            server.sendmail(SMTP_USER, ALERT_EMAIL, message)
+        logging.info(f"Alert sent to {ALERT_EMAIL} at {datetime.now()}")
+    except Exception as e:
+        logging.error(f"Failed to send alert: {e}")
+
+def send_sms_alert(threats):
+    """Placeholder for sending SMS alerts (implementation depends on SMS service)."""
+    # Integrate with an SMS service like Twilio or Nexmo
+    logging.info(f"SMS alert: Detected {len(threats)} high-severity threats.")
+
+def monitor_system():
+    """Monitors the system for anomalies."""
+    logging.info(f"Monitoring system at {datetime.now()}")
+    threat_feed = fetch_threat_feed()
+    
+    anomalies, high_severity_threats = detect_anomalies(threat_feed)
+    if anomalies:
+        print("Anomaly detected! Sending alerts...")
+        send_email_alert(high_severity_threats)
+        send_sms_alert(high_severity_threats)
+    else:
+        print("No anomalies detected.")
+
+def continuous_monitoring():
+    """Main loop for continuous monitoring."""
+    while True:
+        monitor_system()
+        time.sleep(MONITOR_INTERVAL)  # Wait for the specified monitoring interval
+
+if __name__ == "__main__":
+    # Start the monitoring in a separate thread
+    monitoring_thread = threading.Thread(target=continuous_monitoring)
+    monitoring_thread.start()
